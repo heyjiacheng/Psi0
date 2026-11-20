@@ -1,0 +1,535 @@
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Semi+Condensed:wght@500;600&display=swap">
+<style>
+/* Layout: success-rate strip; top-down map (robot start frame, cm) beside the selected condition's runs and video;
+   success by condition and the condition list below. Markers are coloured by their success rate on a diverging
+   fail-grey-success ramp; the chosen episodes are told apart by labels, not colour. */
+:root {
+  --bg: #f5f6f7; --panel: #ffffff; --ink: #15191d; --ink-2: #4c5660; --muted: #7d8791; --rule: #dde1e5;
+  --ok: #2a78d6; --fail: #d03b3b; --table: #e6e3dc; --table-edge: #b9b3a6; --demo: #c4cad0;
+  --chip-ok-bg: #e3eefb; --chip-fail-bg: #fbe6e6; --focus: #15191d; --mid: #f0efec;
+  --display: "Saira Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121518; --panel: #1a1e22; --ink: #e9ecef; --ink-2: #b4bcc4; --muted: #8a949e; --rule: #2d3339;
+    --ok: #4b94ea; --fail: #e45d5d; --table: #2a2824; --table-edge: #4d483f; --demo: #3d444b;
+    --chip-ok-bg: #1d3047; --chip-fail-bg: #3d2224; --focus: #e9ecef; --mid: #383835; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121518; --panel: #1a1e22; --ink: #e9ecef; --ink-2: #b4bcc4; --muted: #8a949e; --rule: #2d3339;
+  --ok: #4b94ea; --fail: #e45d5d; --table: #2a2824; --table-edge: #4d483f; --demo: #3d444b;
+  --chip-ok-bg: #1d3047; --chip-fail-bg: #3d2224; --focus: #e9ecef; --mid: #383835; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.5; margin: 0; }
+.page { max-width: 1320px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 40px; display: grid; gap: 18px; }
+@media (max-width: 520px) { .page { padding-inline: 16px; } }
+h1, h2 { font-family: var(--display); font-weight: 600; letter-spacing: 0.01em; text-wrap: balance; margin: 0; }
+h1 { font-size: 28px; line-height: 1.15; }
+h2 { font-size: 18px; }
+header { display: grid; gap: 4px; }
+.eyebrow { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; color: var(--muted); overflow-wrap: anywhere; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.progress { height: 4px; background: var(--rule); margin-top: 6px; }
+.progress i { display: block; height: 100%; background: var(--ink-2); }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--rule); padding: 10px 14px; display: grid; gap: 5px; min-width: 0; }
+.stat .label { color: var(--ink-2); font-size: 13px; }
+.stat .value { font-family: var(--display); font-size: 26px; font-weight: 600; line-height: 1; }
+.stat .value small { font-family: var(--mono); font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+.bar { height: 5px; background: var(--bg); border: 1px solid var(--rule); }
+.bar i { display: block; height: 100%; background: var(--ok); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 960px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--rule); padding: 14px 16px; min-width: 0; display: grid; gap: 8px; }
+.head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.toggles, .nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.toggle, .nav button { font: inherit; font-size: 12.5px; padding: 3px 10px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink-2); cursor: pointer; }
+.toggle[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.toggle:focus-visible, .mk:focus-visible, button:focus-visible, tr:focus-visible, .grow:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; color: var(--ink-2); font-size: 12.5px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend svg { width: 18px; height: 14px; overflow: visible; }
+.legend .ramp { display: inline-flex; gap: 2px; }
+.legend .ramp i { width: 14px; height: 12px; display: block; }
+.panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 620px) { .panels { grid-template-columns: minmax(0, 1fr); } }
+.panel { margin: 0; display: grid; gap: 4px; min-width: 0; }
+.panel figcaption { font-size: 13px; color: var(--ink-2); }
+#map-start .trainpath { opacity: 0.4; }
+.map { width: 100%; height: auto; display: block; touch-action: manipulation; }
+.map text { font-family: var(--body); }
+.axis-label { fill: var(--muted); }
+.tick { fill: var(--muted); font-family: var(--mono) !important; }
+.halo { paint-order: stroke fill; stroke: var(--panel); stroke-linejoin: round; }
+.lbl { fill: var(--ink-2); }
+.mk { cursor: pointer; }
+.mk .hit { fill: transparent; }
+.mk .ring { fill: none; stroke: transparent; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.mk:hover .ring, .mk.sel .ring { stroke: var(--focus); }
+.mk-label { font-family: var(--mono) !important; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.trainpath { fill: none; stroke: var(--demo); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.eppath { fill: none; stroke: var(--ink-2); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.eppath.after { stroke-width: 1.2; stroke-dasharray: 3 3; }
+.ep { transition: opacity 120ms; }
+.dim .ep { opacity: 0.28; }
+.dim .ep.hl { opacity: 1; }
+.ep.hl .eppath { stroke: var(--ink); stroke-width: 2.6; }
+.faucet { fill: var(--ink-2); stroke: var(--panel); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ep.hl .faucet { fill: var(--ink); }
+.dialray { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tooltip { position: fixed; pointer-events: none; z-index: 5; background: var(--ink); color: var(--panel); padding: 5px 9px; font-size: 12.5px; line-height: 1.4; max-width: 320px; }
+
+.inspector video, .novid { width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: #000; display: block; }
+.novid { display: grid; place-items: center; color: #c9ced3; font-size: 13px; }
+.chip { font-size: 12px; padding: 1px 8px; font-weight: 500; white-space: nowrap; font-family: var(--body); }
+.chip.ok { background: var(--chip-ok-bg); color: var(--ok); }
+.chip.fail { background: var(--chip-fail-bg); color: var(--fail); }
+.chip.none { background: var(--bg); color: var(--muted); }
+.runs { display: flex; flex-wrap: wrap; gap: 6px; }
+.runs button { font: inherit; font-family: var(--mono); font-size: 12px; padding: 2px 9px; cursor: pointer; border: 1px solid transparent; display: inline-flex; align-items: center; gap: 5px; }
+.runs button.ok { background: var(--chip-ok-bg); color: var(--ok); }
+.runs button.fail { background: var(--chip-fail-bg); color: var(--fail); }
+.runs button[aria-pressed="true"] { border-color: var(--focus); }
+.runs .pending { font-family: var(--mono); font-size: 12px; padding: 2px 9px; border: 1px dashed var(--rule); color: var(--muted); }
+.thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.thumbs figure { margin: 0; display: grid; gap: 2px; }
+.thumbs img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--bg); }
+.thumbs figcaption { font-size: 12px; color: var(--muted); }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 14px; margin: 0; font-size: 13px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+
+.lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 960px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.groups { display: grid; gap: 6px; }
+.grow { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) 7.5em; align-items: center; gap: 10px; cursor: pointer; padding: 2px 0; }
+.grow:hover .gname { color: var(--ink); }
+.gname { color: var(--ink-2); font-size: 13px; }
+.gval { font-family: var(--mono); font-size: 12.5px; text-align: right; }
+.gbar { position: relative; height: 14px; background: var(--chip-fail-bg); }
+.gbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ok); }
+.gbar b { position: absolute; top: 50%; height: 2px; margin-top: -1px; background: var(--ink); opacity: 0.55; }
+.gbar.empty { background: var(--bg); border: 1px dashed var(--rule); }
+.gsep { height: 1px; background: var(--rule); margin: 4px 0; }
+.tablewrap { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 500; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: var(--panel); }
+td { padding: 3px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+tbody tr { cursor: pointer; }
+tbody tr:hover, tbody tr.sel { background: var(--bg); }
+td.r, th.r { text-align: right; }
+.minibar { display: inline-block; width: 60px; height: 6px; background: var(--chip-fail-bg); vertical-align: middle; margin-left: 8px; }
+.minibar i { display: block; height: 100%; background: var(--ok); }
+.foot { color: var(--muted); font-size: 12px; font-family: var(--mono); overflow-wrap: anywhere; }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow" id="eyebrow"></div>
+    <h1 id="headline"></h1>
+    <div class="progress" id="progress" hidden><i></i></div>
+  </header>
+
+  <section class="stats" id="stats" aria-label="Success rates"></section>
+
+  <section class="main">
+    <div class="card">
+      <div class="head">
+        <h2>Map</h2>
+        <div class="toggles" role="group" aria-label="Map layers">
+          <button class="toggle" id="t-train" aria-pressed="true">Training paths</button>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="panels">
+        <figure class="panel"><figcaption id="cap-start">Start pose: moved, or turned</figcaption>
+          <svg id="map-start" class="map" role="img" aria-label="Top-down, robot start frame: success rate of the training start pose and of every move and turn of it"></svg></figure>
+        <figure class="panel"><figcaption>Along the training paths</figcaption>
+          <svg id="map-path" class="map" role="img" aria-label="Top-down, robot start frame: training paths, the chosen episodes and their faucets, and the success rate at 1/3, 2/3 of the way and the reach point"></svg></figure>
+      </div>
+    </div>
+    <aside class="card inspector" aria-live="polite">
+      <div class="head">
+        <h2 id="insp-title">Condition</h2>
+        <div class="nav"><button id="prev" aria-label="Previous">&larr;</button><button id="next" aria-label="Next">&rarr;</button></div>
+      </div>
+      <div class="runs" id="insp-runs"></div>
+      <div id="insp-video"></div>
+      <div class="thumbs" id="insp-thumbs"></div>
+      <dl class="kv" id="insp-kv"></dl>
+    </aside>
+  </section>
+
+  <section class="lower">
+    <div class="card">
+      <h2>Success by condition</h2>
+      <div class="groups" id="groups"></div>
+    </div>
+    <div class="card">
+      <h2>Conditions</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Condition</th><th>Episode</th><th>Success</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+<div class="tooltip" id="tip" hidden></div>
+
+<script id="sweep-data" type="application/json">__DATA_JSON__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById("sweep-data").textContent);
+  const T = D.trials, MK = D.markers, S = D.slots;
+  const NS = "http://www.w3.org/2000/svg";
+  const pct = (k, n) => n ? Math.round(100 * k / n) + "%" : "–";
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const OUT = { success: "success", moved_not_done: "turned partway", reached_not_moved: "reached, not turned",
+                not_reached: "not reached", fell: "fell" };
+  const outcomeText = t => OUT[t.outcome] || t.outcome;
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const slotOf = {}; S.forEach(s => { slotOf[s.slot] = s; });
+
+  // ---------- header + stats
+  const sum = ts => ({ n: ts.length, k: ts.filter(t => t.success).length });
+  const running = D.done < D.planned;
+  const eta = h => h >= 1.5 ? `~${Math.round(h)} h left` : `~${Math.max(1, Math.round(h * 60))} min left`;
+  document.getElementById("eyebrow").textContent = [
+    D.task, `ckpt ${D.ckpt_step}`, running ? `${D.done} / ${D.planned} trials` : `${T.length} trials`,
+    `episodes ${S.map(s => s.episode).join(", ")}`, `prompt “${D.instruction}”`, `updated ${D.updated}`,
+    running && D.eta_h ? eta(D.eta_h) : null,
+  ].filter(Boolean).join(" · ");
+  document.getElementById("headline").textContent = D.title;
+  if (running) {
+    const pr = document.getElementById("progress");
+    pr.hidden = false;
+    pr.firstElementChild.style.width = (100 * D.done / D.planned).toFixed(1) + "%";
+  }
+  const stats = [["All", sum(T)], ["At training states", sum(T.filter(t => t.group === "training start" || t.kind === "path"))]]
+    .concat(D.groups.filter(g => /^(moved|turned)/.test(g.group)).map(g => [cap(g.group), g]));
+  document.getElementById("stats").innerHTML = stats.map(([label, s]) =>
+    `<div class="stat"><div class="label">${esc(label)}</div>` +
+    `<div class="value">${pct(s.k, s.n)}<small>${s.k}/${s.n}</small></div>` +
+    `<div class="bar" aria-hidden="true"><i style="width:${s.n ? 100 * s.k / s.n : 0}%"></i></div></div>`).join("");
+
+  // ---------- success-rate colours: fail -> grey -> success, mixed in OKLab from the theme's tokens
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const hexRgb = h => { h = h.replace("#", ""); if (h.length === 3) h = [...h].map(c => c + c).join(""); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255); };
+  const lin = c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  const gam = c => c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
+  const oklab = rgb => {
+    const [r, g, b] = rgb.map(lin);
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+            0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+  };
+  const rgbOf = ([L, a, b]) => {
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3,
+          s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+    return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+            -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s].map(c => Math.min(1, Math.max(0, gam(c))));
+  };
+  const lum = rgb => { const [r, g, b] = rgb.map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  let pal;
+  const readPalette = () => { pal = { ok: oklab(hexRgb(css("--ok"))), fail: oklab(hexRgb(css("--fail"))), mid: oklab(hexRgb(css("--mid"))),
+                                      ink: hexRgb(css("--ink")), panel: hexRgb(css("--panel")) }; };
+  const rateColor = rate => {
+    const t = Math.abs(rate - 0.5) * 2, pole = rate >= 0.5 ? pal.ok : pal.fail;
+    const rgb = rgbOf(pal.mid.map((v, i) => v + t * (pole[i] - v)));
+    const text = contrast(rgb, pal.ink) >= contrast(rgb, pal.panel) ? "var(--ink)" : "var(--panel)";
+    return { fill: `rgb(${rgb.map(c => Math.round(c * 255)).join(",")})`, text };
+  };
+  readPalette();
+
+  // ---------- maps: robot start frame, x = -dy (robot's left drawn on the left), y = -dx (ahead drawn up), units cm
+  const X = dy => -dy * 100, Y = dx => -dx * 100;
+  const p0 = D.p0;
+  const poly = path => path.map(p => `${X(p[1]).toFixed(2)},${Y(p[0]).toFixed(2)}`).join(" ");
+  const panels = [];
+  const textStyle = document.createElement("style");
+  document.head.appendChild(textStyle);
+  function makePanel(id, pts, pad, R) {
+    const svg = document.getElementById(id);
+    const xs = pts.map(p => X(p[1])), ys = pts.map(p => Y(p[0]));
+    const x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad, yTop = Math.min(...ys) - pad, yBot = Math.max(...ys) + pad;
+    const ML = 7.5, MB = 7;
+    svg.setAttribute("viewBox", `${x0 - ML} ${yTop} ${x1 - x0 + ML} ${yBot - yTop + MB}`);
+    const clip = el("clipPath", { id: id + "-clip" }, el("defs", {}, svg));
+    el("rect", { x: x0, y: yTop, width: x1 - x0, height: yBot - yTop }, clip);
+    const plot = el("g", { "clip-path": `url(#${id}-clip)` }, svg);
+    el("rect", { x: x0, y: yTop, width: x1 - x0, height: yBot - yTop, fill: "var(--panel)" }, plot);
+    const tbl = D.table;
+    if (tbl) {
+      const a = tbl.yaw_deg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+      const pts_ = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([u, v]) => {
+        const lx = u * tbl.size[0] / 2, ly = v * tbl.size[1] / 2;
+        return X(tbl.center[1] + sa * lx + ca * ly) + "," + Y(tbl.center[0] + ca * lx - sa * ly);
+      }).join(" ");
+      el("polygon", { points: pts_, fill: "var(--table)", stroke: "var(--table-edge)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }, plot);
+    }
+    const g = el("g", {}, plot);
+    for (let v = Math.ceil(-x1 / 10) * 10; v <= -x0; v += 10)
+      el("line", { x1: -v, x2: -v, y1: yTop, y2: yBot, stroke: "var(--rule)", "stroke-width": 0.5, "vector-effect": "non-scaling-stroke" }, g);
+    for (let v = Math.ceil(-yBot / 10) * 10; v <= -yTop; v += 10)
+      el("line", { x1: x0, x2: x1, y1: -v, y2: -v, stroke: "var(--rule)", "stroke-width": 0.5, "vector-effect": "non-scaling-stroke" }, g);
+    for (let v = Math.ceil(-yBot / 10) * 10; v <= -yTop; v += 10) {
+      const t = el("text", { x: x0 - 1.1, y: -v + 0.7, class: "tick", "text-anchor": "end" }, svg); t.textContent = v;
+    }
+    for (let v = Math.ceil(-x1 / 10) * 10; v <= -x0; v += 10) {
+      const t = el("text", { x: -v, y: yBot + 2.7, class: "tick", "text-anchor": "middle" }, svg);
+      t.textContent = v === 0 ? "0" : (v > 0 ? v + " L" : -v + " R");
+    }
+    const ax = el("text", { x: (x0 + x1) / 2, y: yBot + 5.9, class: "axis-label", "text-anchor": "middle" }, svg);
+    ax.textContent = "cm left / right of the spawn point";
+    const ay = el("text", { x: x0 - 6.2, y: (yTop + yBot) / 2, class: "axis-label", "text-anchor": "middle", transform: `rotate(-90 ${x0 - 6.2} ${(yTop + yBot) / 2})` }, svg);
+    ay.textContent = "cm ahead";
+    const P = { id, svg, plot, x0, x1, yTop, yBot, vbW: x1 - x0 + ML, R };
+    P.train = el("g", { "pointer-events": "none" }, plot);
+    D.train_paths.forEach(path => el("polyline", { points: poly(path), class: "trainpath" }, P.train));
+    P.marks = el("g", {}, plot);
+    P.labels = el("g", { "pointer-events": "none" });
+    panels.push(P);
+    return P;
+  }
+
+  // markers: one node per panel a condition is drawn in; colour = success rate of its finished runs
+  MK.forEach(m => { m.nodes = []; m.fills = []; m.texts = []; });
+  const drawMarker = (P, parent, m, i, cx, cy, r) => {
+    const g = el("g", { class: "mk", tabindex: 0, role: "button",
+      "aria-label": `${m.name}: ${m.n ? `${m.k} of ${m.n} succeeded` : "not run yet"}` }, parent);
+    g.dataset.m = i;
+    el("circle", { cx, cy, r: r + 0.6, class: "hit" }, g);
+    if (m.n) {
+      m.fills.push(el("circle", { cx, cy, r, stroke: "var(--panel)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" }, g));
+      const t = el("text", { x: cx, y: cy, class: "mk-label halo" }, P.labels);
+      t.textContent = `${m.k}/${m.n}`;
+      m.texts.push(t);
+    } else {
+      el("circle", { cx, cy, r: r - 0.2, fill: "var(--panel)", "fill-opacity": 0.7, stroke: "var(--muted)", "stroke-width": 1,
+                     "stroke-dasharray": "2 2", "vector-effect": "non-scaling-stroke" }, g);
+    }
+    el("circle", { cx, cy, r: r + 0.35, class: "ring" }, g);
+    m.nodes.push(g);
+  };
+  const paintMarkers = () => MK.forEach(m => {
+    if (!m.n) return;
+    const c = rateColor(m.k / m.n);
+    m.fills.forEach(f => f.setAttribute("fill", c.fill));
+    m.texts.forEach(t => { t.setAttribute("fill", c.text); t.style.stroke = c.fill; });
+  });
+  const iStart0 = MK.findIndex(m => m.id === "start:0");
+
+  // panel 1: the start pose, moved (around it) and turned (the dial beside it)
+  const dial = { dx: p0[0] + 0.005, dy: p0[1] - 0.235, len: 6.5 };
+  const A = makePanel("map-start", [[p0[0] - 0.125, p0[1] + 0.125], [p0[0] + 0.125, p0[1] - 0.125],
+                                    [dial.dx + 0.095, dial.dy - 0.07], [dial.dx - 0.05, dial.dy + 0.07]], 2.5, 1.75);
+  const dc = [X(dial.dy), Y(dial.dx)];
+  const dialLayer = el("g", {}, A.plot);
+  el("circle", { cx: dc[0], cy: dc[1], r: 0.8, fill: "var(--muted)" }, dialLayer);
+  [0, ...new Set(MK.filter(m => m.kind === "start" && m.dyaw).map(m => m.dyaw))].forEach(yaw => {
+    const r = yaw * Math.PI / 180;
+    el("line", { x1: dc[0], y1: dc[1], x2: dc[0] - dial.len * Math.sin(r), y2: dc[1] - dial.len * Math.cos(r), class: "dialray",
+                 "stroke-dasharray": yaw ? "" : "1.5 1.5" }, dialLayer);
+  });
+  const dl = el("text", { x: dc[0], y: dc[1] + 3.6, class: "axis-label halo", "text-anchor": "middle" }, dialLayer);
+  dl.textContent = "turned in place";
+  const fx = S.map(s => s.faucet[0]).filter(v => v !== undefined);
+  if (fx.length) document.getElementById("cap-start").textContent +=
+    ` (the faucets ${Math.round(100 * Math.min(...fx))}–${Math.round(100 * Math.max(...fx))} cm ahead)`;
+  MK.map((m, i) => i).sort((a, b) => (MK[a].n > 0) - (MK[b].n > 0)).forEach(i => {
+    const m = MK[i];
+    if (m.kind !== "start") return;
+    if (m.dyaw) {
+      const r = m.dyaw * Math.PI / 180, L = dial.len + 1.9;
+      drawMarker(A, dialLayer, m, i, dc[0] - L * Math.sin(r), dc[1] - L * Math.cos(r), A.R);
+    } else drawMarker(A, A.marks, m, i, X(m.dy), Y(m.dx), i === iStart0 ? A.R * 1.2 : A.R);
+  });
+  A.plot.appendChild(A.labels);
+
+  // panel 2: the chosen episodes' replayed paths (solid up to the reach point), faucets, and their path points
+  const pathPts = [[p0[0] - 0.03, p0[1]]];
+  S.forEach(s => { s.path.forEach(p => pathPts.push(p)); if (s.faucet) pathPts.push([s.faucet[0] + 0.02 + 0.02 * S.length, s.faucet[1]]); });
+  const B = makePanel("map-path", pathPts, 5, 2.3);
+  const epLayer = el("g", {}, B.plot);
+  B.plot.insertBefore(epLayer, B.marks);
+  const placed = [];
+  S.forEach(s => {
+    const g = el("g", { class: "ep" }, epLayer);
+    s.node = g;
+    const cut = s.frames ? Math.min(s.path.length, Math.round(s.frames.p3 / 5) + 1) : s.path.length;
+    el("polyline", { points: poly(s.path.slice(0, cut)), class: "eppath" }, g);
+    if (cut < s.path.length) el("polyline", { points: poly(s.path.slice(cut - 1)), class: "eppath after" }, g);
+    const [fx_, fy_, fyaw] = s.faucet;
+    const fg = el("g", { transform: `translate(${X(fy_)},${Y(fx_)}) rotate(${-fyaw})` }, g);
+    el("rect", { x: -1.6, y: -0.9, width: 3.2, height: 1.8, rx: 0.5, class: "faucet" }, fg);
+    let ly = Y(fx_) - 2.3;  // label above the faucet, nudged up past labels already placed nearby
+    while (placed.some(([px, py]) => Math.abs(px - X(fy_)) < 8 && Math.abs(py - ly) < 2.4)) ly -= 2.6;
+    placed.push([X(fy_), ly]);
+    const lb = el("text", { x: X(fy_), y: ly, class: "lbl halo", "text-anchor": "middle" }, g);
+    lb.textContent = `ep ${s.episode}`;
+  });
+  const byRun = MK.map((m, i) => i).sort((a, b) => (MK[a].n > 0) - (MK[b].n > 0));  // finished ones drawn on top
+  byRun.forEach(i => { const m = MK[i]; if (m.kind === "path") drawMarker(B, B.marks, m, i, X(m.dy), Y(m.dx), B.R); });
+  if (iStart0 >= 0) drawMarker(B, B.marks, MK[iStart0], iStart0, X(MK[iStart0].dy), Y(MK[iStart0].dx), B.R);
+  B.plot.appendChild(B.labels);
+  paintMarkers();
+
+  // map text in screen pixels: SVG font sizes are in map units (cm), so rescale them with each map's drawn width
+  const sizeText = () => {
+    textStyle.textContent = panels.map(P => {
+      const k = Math.max(0.1, P.svg.getBoundingClientRect().width / P.vbW);
+      const px = v => (v / k).toFixed(3) + "px";
+      return `#${P.id} .tick{font-size:${px(10.5)}} #${P.id} .axis-label{font-size:${px(11.5)}} #${P.id} .lbl{font-size:${px(11.5)}}` +
+        ` #${P.id} .halo{stroke-width:${px(3.5)}} #${P.id} .mk-label{font-size:${px(Math.min(10.5, P.R * k * 0.62))}${P.R * k < 10.5 ? ";display:none" : ""}}`;
+    }).join(" ");
+  };
+  sizeText();
+  if (window.ResizeObserver) panels.forEach(P => new ResizeObserver(sizeText).observe(P.svg)); else window.addEventListener("resize", sizeText);
+  const drawLegend = () => {
+    document.getElementById("legend").innerHTML =
+      `<span>success 0%<span class="ramp" aria-hidden="true">${[0, 0.2, 0.4, 0.6, 0.8, 1].map(r => `<i style="background:${rateColor(r).fill}"></i>`).join("")}</span>100%</span>` +
+      `<span><svg viewBox="-5 -5 10 10"><circle r="3.6" fill="none" stroke="var(--muted)" stroke-dasharray="1.6 1.6"/></svg>not run yet</span>` +
+      `<span><svg viewBox="-9 -5 18 10"><line x1="-8" x2="8" stroke="var(--demo)" stroke-width="1.5"/></svg>training paths (${D.train_paths.length})</span>` +
+      `<span><svg viewBox="-9 -5 18 10"><line x1="-8" x2="8" stroke="var(--ink-2)" stroke-width="2"/></svg>chosen episode, replayed</span>` +
+      `<span><svg viewBox="-5 -5 10 10"><rect x="-4" y="-2.2" width="8" height="4.4" rx="1" fill="var(--ink-2)"/></svg>its faucet</span>`;
+  };
+  drawLegend();
+  const recolor = () => { readPalette(); paintMarkers(); drawLegend(); drawGroups(); };
+  if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", recolor);
+  new MutationObserver(recolor).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  const tb = document.getElementById("t-train");
+  tb.addEventListener("click", () => {
+    const on = tb.getAttribute("aria-pressed") !== "true";
+    tb.setAttribute("aria-pressed", on);
+    panels.forEach(P => P.train.setAttribute("visibility", on ? "visible" : "hidden"));
+  });
+
+  // ---------- tooltip
+  const tip = document.getElementById("tip");
+  const where = m => m.kind === "path" ? `episode ${m.episode}, frame ${m.frame} (${(m.frame / 50).toFixed(1)} s)` :
+    `${m.planned} runs, one in each episode's scene`;
+  panels.forEach(P => {
+    P.svg.addEventListener("pointermove", e => {
+      const g = e.target.closest(".mk"); if (!g) { tip.hidden = true; return; }
+      const m = MK[g.dataset.m];
+      tip.innerHTML = `<b>${esc(cap(m.name))}</b><br>${m.n ? `${m.k}/${m.n} succeeded` : "not run yet"} · ${esc(where(m))}`;
+      tip.hidden = false;
+      tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, e.clientX + 14) + "px";
+      tip.style.top = Math.max(8, e.clientY - tip.offsetHeight - 10) + "px";
+    });
+    P.svg.addEventListener("pointerleave", () => { tip.hidden = true; });
+    P.svg.addEventListener("click", e => { const g = e.target.closest(".mk"); if (g) selectMarker(+g.dataset.m); });
+    P.svg.addEventListener("keydown", e => {
+      const g = e.target.closest(".mk");
+      if (!g || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault(); selectMarker(+g.dataset.m);
+    });
+  });
+
+  // ---------- success by condition
+  const groupsEl = document.getElementById("groups");
+  const firstOfGroup = g => MK.findIndex(m => m.group === g && m.n) >= 0 ? MK.findIndex(m => m.group === g && m.n) : MK.findIndex(m => m.group === g);
+  function drawGroups() {
+    groupsEl.innerHTML = D.groups.map((g, i) => {
+      const sep = i > 0 && (D.groups[i - 1].group === "turned 40°" || (D.groups[i - 1].group === "training start")) ? `<div class="gsep"></div>` : "";
+      const bar = g.n ? `<div class="gbar"><i style="width:${100 * g.k / g.n}%"></i>` +
+        (g.ci95[0] !== null ? `<b style="left:${100 * g.ci95[0]}%;width:${100 * (g.ci95[1] - g.ci95[0])}%"></b>` : "") + `</div>`
+        : `<div class="gbar empty"></div>`;
+      return sep + `<div class="grow" tabindex="0" data-g="${esc(g.group)}" title="${g.n ? `${pct(g.k, g.n)}, 95% interval ${pct(Math.round(100 * g.ci95[0]), 100)}–${pct(Math.round(100 * g.ci95[1]), 100)}` : "not run yet"}">` +
+        `<span class="gname">${esc(cap(g.group))}</span>${bar}<span class="gval">${g.k}/${g.n}${g.n < g.planned ? `<span style="color:var(--muted)"> of ${g.planned}</span>` : ""}</span></div>`;
+    }).join("");
+  }
+  drawGroups();
+  groupsEl.addEventListener("click", e => { const r = e.target.closest(".grow"); if (r) { const i = firstOfGroup(r.dataset.g); if (i >= 0) selectMarker(i); } });
+  groupsEl.addEventListener("keydown", e => { const r = e.target.closest(".grow"); if (r && e.key === "Enter") { const i = firstOfGroup(r.dataset.g); if (i >= 0) selectMarker(i); } });
+
+  // ---------- condition list
+  const order = MK.map((m, i) => i);
+  const tbody = document.getElementById("rows");
+  tbody.innerHTML = order.map(i => {
+    const m = MK[i];
+    return `<tr data-m="${i}" tabindex="0"><td>${esc(cap(m.name.replace(/, episode \d+$/, "")))}</td>` +
+      `<td class="num">${m.kind === "path" ? m.episode : "all 5"}</td>` +
+      `<td class="num">${m.n ? `${m.k}/${m.n}<span class="minibar" aria-hidden="true"><i style="width:${100 * m.k / m.n}%"></i></span>` : "–"}</td></tr>`;
+  }).join("");
+  tbody.addEventListener("click", e => { const tr = e.target.closest("tr"); if (tr) selectMarker(+tr.dataset.m); });
+  tbody.addEventListener("keydown", e => { const tr = e.target.closest("tr"); if (tr && e.key === "Enter") selectMarker(+tr.dataset.m); });
+
+  // ---------- selection: a condition and one of its runs
+  let curM = -1;
+  const highlight = slots => {
+    epLayer.classList.toggle("dim", slots.length > 0);
+    S.forEach(s => s.node.classList.toggle("hl", slots.includes(s.slot)));
+  };
+  const showTrial = (m, t) => {
+    document.getElementById("insp-video").innerHTML = t && t.video
+      ? `<video src="${esc(t.video)}" controls muted playsinline autoplay preload="metadata"></video>`
+      : `<div class="novid">${t ? "no video" : "not run yet"}</div>`;
+    const thumb = (src, cap_) => `<figure>${src ? `<img src="${esc(src)}" alt="${esc(cap_)}" loading="lazy">` : `<div class="novid" style="aspect-ratio:16/9">–</div>`}<figcaption>${esc(cap_)}</figcaption></figure>`;
+    document.getElementById("insp-thumbs").innerHTML = t
+      ? thumb(t.train_img, `training, episode ${t.episode} frame ${t.frame}`) + thumb(t.img, t.kind === "path" ? "this run, when the policy took over" : "this run, at the start")
+      : "";
+    const kv = !t ? [] : [
+      ["Episode", `${t.episode}`],
+      ["Result", outcomeText(t)],
+      ["Policy from", t.kind === "path" ? `frame ${t.policy_from} (${(t.policy_from / 50).toFixed(1)} s), after the replay` : "the start"],
+      ["At takeover", [t.joint_err_deg !== undefined ? `joints ≤ ${t.joint_err_deg.toFixed(1)}° from training` : null,
+                       t.img_diff !== undefined ? `image Δ ${t.img_diff.toFixed(1)}/255` : null,
+                       t.train_dpos_cm !== undefined ? `pelvis ${t.train_dpos_cm.toFixed(1)} cm, ${t.train_dyaw_deg > 0 ? "+" : ""}${t.train_dyaw_deg.toFixed(1)}° from the training pose` : null].filter(Boolean).join(", ") || "–"],
+      ["Steps", `${t.steps} (${(t.steps / 50).toFixed(1)} s)${t.success ? "" : ", budget used"}`],
+    ];
+    if (t && t.end_heading !== undefined) kv.push(["Heading", `${Math.abs(t.dyaw)}° ${t.dyaw > 0 ? "left" : "right"} → ${t.end_heading > 0 ? "+" : ""}${t.end_heading}° at the end${t.turned_back ? " (turned back)" : ""}`]);
+    if (t && t.contacts && t.contacts.length) kv.push(["Touching", t.contacts.join(", ")]);
+    document.getElementById("insp-kv").innerHTML = kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="num">${esc(v)}</dd>`).join("");
+    highlight(t ? [t.slot] : m.kind === "path" ? [m.slot] : []);
+  };
+  function selectMarker(mi, ti) {
+    curM = mi;
+    const m = MK[mi];
+    MK.forEach((q, j) => q.nodes.forEach(n => n.classList.toggle("sel", j === mi)));
+    tbody.querySelectorAll("tr").forEach(tr => tr.classList.toggle("sel", +tr.dataset.m === mi));
+    const cls = !m.n ? "none" : m.k / m.n >= 0.5 ? "ok" : "fail";
+    document.getElementById("insp-title").innerHTML = `${esc(cap(m.name))} <span class="chip ${cls}">${m.n ? `${m.k}/${m.n}` : "not run yet"}</span>`;
+    const runs = document.getElementById("insp-runs");
+    runs.innerHTML = m.trials.map((ti_, j) => { const t = T[ti_];
+        return `<button class="${t.success ? "ok" : "fail"}" data-t="${ti_}" aria-pressed="false" title="${esc(t.label)}: ${esc(outcomeText(t))}">` +
+               `${t.success ? "✓" : "✗"} ${m.kind === "path" ? `run ${j + 1}` : `ep ${t.episode}`}</button>`; }).join("") +
+      Array.from({ length: Math.max(0, m.planned - m.n) }, () => `<span class="pending">pending</span>`).join("");
+    pickRun(ti !== undefined ? ti : m.trials[0]);
+  }
+  function pickRun(ti) {
+    document.querySelectorAll("#insp-runs button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.t === ti));
+    showTrial(MK[curM], ti === undefined ? undefined : T[ti]);
+  }
+  document.getElementById("insp-runs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) pickRun(+b.dataset.t); });
+  const stepTo = d => { const pos = order.indexOf(curM); selectMarker(order[(pos + d + order.length) % order.length]); };
+  document.getElementById("prev").addEventListener("click", () => stepTo(-1));
+  document.getElementById("next").addEventListener("click", () => stepTo(1));
+  const first = MK.findIndex(m => m.id === "start:0" && m.n) >= 0 ? MK.findIndex(m => m.id === "start:0") : Math.max(0, MK.findIndex(m => m.n));
+  selectMarker(first);
+
+  document.getElementById("foot").textContent = D.checkpoint;
+})();
+</script>

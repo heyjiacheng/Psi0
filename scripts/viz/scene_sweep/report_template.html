@@ -1,0 +1,793 @@
+<title>__TITLE__</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: the answers down the left (one row per condition, success against the change, every trial as a strip);
+   the selected trial's video on the right, kept in view. Distances in cm, in the robot's start frame. */
+:root {
+  --bg: #f2f3f1; --panel: #fbfbfa; --ink: #12171c; --ink-2: #4a545e; --muted: #858e97; --rule: #e2e4e0; --axis: #c3c7c2;
+  --ok: #2a78d6; --ok-soft: #dce8f8; --fail: #d6453e; --fail-soft: #f7e0dd; --ref: rgba(18, 23, 28, 0.06);
+  --ref-line: #99a1a9; --table: #e7e2d7; --table-edge: #b3a994; --sel: #12171c; --pending: #d8dbd6;
+  --edge-c: #7a6a4f; --faucet-c: #c46a00;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1114; --panel: #161a1e; --ink: #e7eaed; --ink-2: #b2bac2; --muted: #89929b; --rule: #262b30; --axis: #3a4147;
+    --ok: #4a92ea; --ok-soft: #1a2c43; --fail: #e8625b; --fail-soft: #3a2221; --ref: rgba(231, 234, 237, 0.07);
+    --ref-line: #6c747d; --table: #2a2824; --table-edge: #5a5347; --sel: #e7eaed; --pending: #343a40;
+    --edge-c: #bba886; --faucet-c: #f0a33a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1114; --panel: #161a1e; --ink: #e7eaed; --ink-2: #b2bac2; --muted: #89929b; --rule: #262b30; --axis: #3a4147;
+  --ok: #4a92ea; --ok-soft: #1a2c43; --fail: #e8625b; --fail-soft: #3a2221; --ref: rgba(231, 234, 237, 0.07);
+  --ref-line: #6c747d; --table: #2a2824; --table-edge: #5a5347; --sel: #e7eaed; --pending: #343a40;
+  --edge-c: #bba886; --faucet-c: #f0a33a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
+.page {
+  max-width: 1420px; margin: 0 auto; padding-block: 28px 44px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 450px); gap: 22px 28px;
+  grid-template-areas: "head head" "sum view" "map view" "charts view" "strip view" "foot foot"; align-items: start;
+}
+@media (max-width: 1080px) {
+  .page { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "sum" "map" "view" "charts" "strip" "foot"; }
+}
+h1, h2, h3 { margin: 0; font-family: var(--cond); font-weight: 600; text-wrap: balance; }
+h1 { font-size: 30px; line-height: 1.1; letter-spacing: 0.005em; }
+h2 { font-size: 13px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.head { grid-area: head; display: grid; gap: 6px; }
+.meta { font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.progress { height: 3px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--ink-2); }
+section { min-width: 0; display: grid; gap: 10px; }
+.sum { grid-area: sum; }
+.charts { grid-area: charts; gap: 22px; }
+.strip { grid-area: strip; }
+.foot { grid-area: foot; font: 11.5px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
+
+/* one row per condition */
+.rows { display: grid; gap: 2px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px; }
+.srow {
+  display: grid; grid-template-columns: 52px minmax(0, 1.3fr) minmax(120px, 2fr) 92px 104px 104px; gap: 14px; align-items: center;
+  padding: 7px 8px; border: 0; background: none; text-align: left; border-radius: 4px; cursor: pointer;
+}
+.srow:hover { background: var(--ref); }
+.srow[aria-pressed="true"] { background: var(--ref); box-shadow: inset 2px 0 0 var(--sel); }
+.srow .code { font: 500 12px var(--mono); color: var(--muted); }
+.srow .name { font-weight: 500; min-width: 0; }
+.srow .name small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
+.track { position: relative; height: 22px; }
+.track .bg { position: absolute; left: 0; right: 0; top: 8px; height: 6px; background: var(--ref); border-radius: 3px; }
+.track .fill { position: absolute; left: 0; top: 8px; height: 6px; background: var(--ok); border-radius: 0 3px 3px 0; }
+.track .ci { position: absolute; top: 10px; height: 2px; background: var(--ink-2); opacity: 0.55; }
+.track .ci::before, .track .ci::after { content: ""; position: absolute; top: -4px; width: 1px; height: 10px; background: var(--ink-2); }
+.track .ci::before { left: 0; } .track .ci::after { right: 0; }
+.track .base { position: absolute; top: 2px; bottom: 2px; width: 0; border-left: 1px solid var(--ref-line); }
+.srow .rate { font: 600 17px var(--sans); }
+.srow .rate small { font: 400 12px var(--mono); color: var(--muted); margin-left: 5px; }
+.srow .delta { font: 12.5px var(--mono); color: var(--ink-2); }
+.srow .delta small { display: block; color: var(--muted); font-size: 11.5px; }
+@media (max-width: 640px) {
+  .srow { grid-template-columns: 40px minmax(0, 1fr) 70px; gap: 4px 10px; }
+  .srow .track { grid-column: 2 / 4; grid-row: 2; }
+  .srow .delta { grid-column: 2 / 4; grid-row: 3; }
+  .srow .delta.st { grid-row: 4; }
+}
+
+/* top-down map */
+.mapsec { grid-area: map; }
+.maphead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.mapcond { font-size: 13px; font-weight: 500; }
+.mapcond b { font: 500 12px var(--mono); color: var(--muted); margin-right: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-left: auto; font-size: 12px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend svg { width: 16px; height: 12px; overflow: visible; }
+.mapwrap { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+#map { display: block; width: 100%; }
+.ttable { fill: none; stroke-width: 1; stroke-opacity: 0.55; vector-effect: non-scaling-stroke; }
+.ttable.ok { stroke: var(--ok); } .ttable.fail { stroke: var(--fail); } .ttable.none { stroke: var(--muted); }
+.ppath { fill: none; stroke-width: 1; stroke-opacity: 0.35; vector-effect: non-scaling-stroke; }
+.ppath.ok { stroke: var(--ok); } .ppath.fail { stroke: var(--fail); }
+.physt { fill: none; stroke: var(--ink-2); stroke-width: 1.3; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.fdot { stroke: var(--panel); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.fsel { stroke: var(--sel); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.fdot.ok, .fsel.ok { fill: var(--ok); } .fdot.fail, .fsel.fail { fill: var(--fail); }
+.fdot.none, .fsel.none { fill: var(--pending); }
+.selring, .hovring { fill: none; stroke: var(--sel); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.hovring { stroke-width: 1.5; }
+#map.picking { cursor: pointer; }
+.scalebar { stroke: var(--ink-2); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+
+/* success against the change */
+.group { display: grid; gap: 8px; }
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+figure.wide { grid-column: 1 / -1; }
+.panels.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 640px) { .panels.four { grid-template-columns: minmax(0, 1fr); } }
+.rowl { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-2); }
+.medm { stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; }
+.ctlm { stroke: var(--ref-line); stroke-width: 2; stroke-linecap: round; }
+.guide.se { stroke: var(--edge-c); } .guide.sf { stroke: var(--faucet-c); }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 10px 4px; display: grid; gap: 2px; min-width: 0; }
+figcaption { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
+figcaption .num { font-size: 12px; color: var(--muted); font-weight: 400; }
+figure svg { width: 100%; height: auto; display: block; overflow: visible; }
+svg text { font-family: var(--mono); fill: var(--muted); font-size: 10.5px; }
+svg .lab { font-family: var(--sans); fill: var(--ink-2); font-size: 11.5px; }
+.grid { stroke: var(--rule); stroke-width: 1; }
+.axis { stroke: var(--axis); stroke-width: 1; }
+.band { fill: var(--ref); }
+.refl { stroke: var(--ref-line); stroke-width: 1; }
+.guide { stroke: var(--ref-line); stroke-width: 1.2; stroke-dasharray: 3 3; fill: none; }
+.rateline { fill: none; stroke: var(--ink-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ratept { fill: var(--ink-2); stroke: var(--panel); stroke-width: 2; }
+.dot { cursor: pointer; }
+.dot .hit { fill: transparent; }
+.dot .m { stroke: var(--panel); stroke-width: 1.2; }
+.dot.ok .m { fill: var(--ok); } .dot.fail .m { fill: var(--fail); }
+.dot.sel .m { stroke: var(--sel); stroke-width: 2; }
+.dot:hover .m { stroke: var(--sel); }
+.dot.se .m { fill: var(--edge-c); } .dot.sf .m { fill: var(--faucet-c); }
+.dot.still .m { fill: var(--panel); stroke-width: 1.4; } .dot.se.still .m { stroke: var(--edge-c); } .dot.sf.still .m { stroke: var(--faucet-c); }
+.dot.ok.still .m { stroke: var(--ok); } .dot.fail.still .m { stroke: var(--fail); }
+.sline { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.sline.se { stroke: var(--edge-c); } .sline.sf { stroke: var(--faucet-c); }
+figcaption .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 4px 0 10px; }
+figcaption .sw.se { background: var(--edge-c); } figcaption .sw.sf { background: var(--faucet-c); }
+figcaption .sw.hol { background: none; box-shadow: inset 0 0 0 1.4px var(--ink-2); }
+figcaption .bar { display: inline-block; width: 2.5px; height: 11px; background: var(--ink); margin: 0 4px 0 12px; vertical-align: -1px; }
+figcaption .bar.ctl { background: var(--ref-line); }
+
+/* every trial */
+.stripwrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px 8px; }
+#strip { display: block; }
+.cell { cursor: pointer; }
+.cell.ok { fill: var(--ok); } .cell.fail { fill: var(--fail); } .cell.none { fill: var(--pending); }
+.cell:hover { stroke: var(--sel); stroke-width: 1.5; }
+.selbox { fill: none; stroke: var(--sel); stroke-width: 2; pointer-events: none; }
+.selcol { fill: var(--ref); pointer-events: none; }
+.rowlab { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-2); }
+
+/* the selected trial */
+.view {
+  grid-area: view; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 14px); display: grid; gap: 10px;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 14px;
+  max-height: calc(100vh - 28px); overflow: auto; min-width: 0;
+}
+@media (max-width: 1080px) { .view { position: static; max-height: none; } }
+.vhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.vhead h3 { font-size: 20px; }
+.vhead h3 small { font: 400 12px var(--mono); color: var(--muted); margin-left: 8px; }
+.nav { display: flex; gap: 4px; }
+.nav button { border: 1px solid var(--rule); background: var(--bg); border-radius: 4px; width: 32px; height: 28px; cursor: pointer; }
+.nav button:hover { border-color: var(--axis); }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip { border: 1px solid transparent; border-radius: 4px; padding: 2px 8px; font: 500 12px var(--mono); cursor: pointer; display: inline-flex; gap: 5px; align-items: center; }
+.chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.fail { background: var(--fail-soft); color: var(--fail); }
+.chip.none { background: var(--bg); color: var(--muted); border: 1px dashed var(--rule); }
+.chip[aria-pressed="true"] { border: 1px solid var(--sel); }
+video, .novid { width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: #000; display: block; border-radius: 4px; }
+.novid { display: grid; place-items: center; color: #c9ced3; font-size: 13px; }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 14px; margin: 0; font-size: 13px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.facts dd.ok { color: var(--ok); } .facts dd.fail { color: var(--fail); }
+#sketch { width: 100%; height: auto; display: block; background: var(--bg); border-radius: 4px; }
+.tbl { fill: var(--table); stroke: var(--table-edge); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.faucet { fill: var(--ink); }
+.robot { fill: var(--ink-2); fill-opacity: 0.18; stroke: var(--ink-2); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.arrow { stroke: var(--ink); stroke-width: 1.5; fill: none; vector-effect: non-scaling-stroke; }
+.end { fill: var(--panel); stroke: var(--ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.path-r { fill: none; stroke: var(--ok); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.path-l { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.path-p { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-dasharray: 1 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.stopm { stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.skgrid { stroke: var(--rule); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tip { position: fixed; z-index: 5; pointer-events: none; background: var(--ink); color: var(--panel); padding: 5px 9px; border-radius: 4px; font-size: 12px; line-height: 1.45; max-width: 300px; }
+.tip b { font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="page">
+  <header class="head">
+    <h1 id="title"></h1>
+    <div class="meta" id="meta"></div>
+    <div class="progress" id="progress" hidden><i></i></div>
+  </header>
+
+  <section class="sum" aria-label="Success per condition">
+    <div class="rows" id="rows"></div>
+  </section>
+
+  <section class="mapsec" aria-label="Top-down map">
+    <div class="maphead"><h2>Top-down</h2><span class="mapcond" id="mapcond"></span><div class="legend" id="maplegend"></div></div>
+    <div class="mapwrap"><svg id="map" role="img" aria-label="Every trial of the condition from above, by its faucet"></svg></div>
+  </section>
+
+  <section class="charts" id="charts" aria-label="Success against the change"></section>
+
+  <section class="strip" aria-label="Every trial">
+    <h2>Trials</h2>
+    <div class="stripwrap"><svg id="strip" role="img" aria-label="Every trial, one row per condition"></svg></div>
+  </section>
+
+  <aside class="view" id="view" aria-live="polite">
+    <div class="vhead">
+      <h3 id="vtitle">Trial</h3>
+      <div class="nav"><button id="prev" aria-label="Previous trial">&larr;</button><button id="next" aria-label="Next trial">&rarr;</button></div>
+    </div>
+    <div class="chips" id="chips" role="group" aria-label="Condition"></div>
+    <div id="video"></div>
+    <dl class="facts" id="facts"></dl>
+    <svg id="sketch" role="img" aria-label="The scene from above"></svg>
+  </aside>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script id="sweep-data" type="application/json">__DATA_JSON__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById("sweep-data").textContent);
+  const S = D.sets, T = D.trials, N = D.n_per_set, OUT = D.outcomes;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const txt = (parent, x, y, s, attrs) => { const t = el("text", Object.assign({ x, y }, attrs || {}), parent); t.textContent = s; return t; };
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const pct = (k, n) => n ? Math.round(100 * k / n) + "%" : "–";
+  const at = S.map(() => new Array(N));
+  T.forEach(t => { at[t.s][t.i] = t; });
+  const ctrlOf = k => S[k].control !== undefined ? S[S[k].control] : null;
+  const state = t => !t || !t.done ? "none" : t.success ? "ok" : "fail";
+  const mark = t => ({ ok: "✓", fail: "✗", none: "·" })[state(t)];
+  const result = t => !t || !t.done ? "not run yet" : (OUT[t.outcome] || t.outcome);
+  const bi = S.findIndex(s => s.key === "c0_baseline"), base = bi >= 0 ? S[bi] : null;
+  let curI = 0, curS = 0;
+  // robot start frame (m: forward, left) -> drawings (cm: x to the robot's right, y backward, so forward is up)
+  const X = left => -left * 100, Y = fwd => -fwd * 100;
+  const tableCorners = tb => {
+    if (tb.poly) return tb.poly.map(([f, l]) => [X(l), Y(f)]);
+    const a = (tb.yaw || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+    return [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([u, v]) => {
+      const lx = u * tb.sx / 2, ly = v * tb.sy / 2;
+      return [X(tb.cy + sa * lx + ca * ly), Y(tb.cx + ca * lx - sa * ly)];
+    });
+  };
+  const tablePoly = (tb, cls, parent) => el("polygon", { points: tableCorners(tb).map(p => p.join(",")).join(" "), class: cls }, parent);
+  const faucetMark = (parent, t, cls) => {
+    const fx = X(t.dy), fy = Y(t.dx);
+    return el("rect", { x: fx - 2.8, y: fy - 5.7, width: 5.6, height: 5.7, class: cls, transform: `rotate(${-(t.dyaw || 0)} ${fx} ${fy})` }, parent);
+  };
+  const robotMark = parent => {
+    el("ellipse", { cx: 0, cy: 4.5, rx: 16, ry: 6.5, class: "robot" }, parent);
+    el("path", { d: "M0,2 L0,-12 M-3.5,-8 L0,-12.5 L3.5,-8", class: "arrow" }, parent);
+  };
+  const stopMark = (parent, t, k) => {  // a cross where the robot stopped walking
+    const cx = X(t.stop.y), cy = Y(t.stop.x);
+    return el("path", { d: `M${cx - k},${cy - k}L${cx + k},${cy + k}M${cx - k},${cy + k}L${cx + k},${cy - k}`, class: "stopm" }, parent);
+  };
+  const trialMarks = (parent, t, k) => {  // the hands' and the pelvis' paths, and where it stopped walking (or ended)
+    const line = (pts, cls) => { if (pts && pts.length > 1) el("polyline", { points: pts.map(([f, l]) => `${X(l)},${Y(f)}`).join(" "), class: cls }, parent); };
+    line(t.path_l, "path-l");
+    line(t.path_r, "path-r");
+    line(t.path_p, "path-p");
+    if (t.stop) stopMark(parent, t, k || 3);
+    else if (t.end) el("circle", { cx: X(t.end[1]), cy: Y(t.end[0]), r: 3, class: "end" }, parent);
+  };
+
+  // ---------- header
+  const running = D.done < D.planned;
+  document.getElementById("title").textContent = D.title;
+  const left = h => h >= 1.5 ? `~${Math.round(h)} h left` : `~${Math.max(1, Math.round(h * 60))} min left`;
+  document.getElementById("meta").innerHTML = [D.task, `ckpt ${D.ckpt_step}`,
+    running ? `${D.done} / ${D.planned} trials` : `${D.planned} trials`,
+    `${D.per_set && D.per_set.length > 1 ? D.per_set[0] + "–" + D.per_set[D.per_set.length - 1] : N} per condition`, D.updated,
+    running && D.eta_h ? left(D.eta_h) : null].filter(Boolean).map(s => `<span>${esc(s)}</span>`).join("");
+  if (running) {
+    const pr = document.getElementById("progress");
+    pr.hidden = false;
+    pr.firstElementChild.style.width = (100 * D.done / D.planned).toFixed(1) + "%";
+  }
+  document.getElementById("foot").textContent = D.checkpoint;
+
+  // ---------- tooltip
+  const tip = document.getElementById("tip");
+  const showTip = (e, lines) => {
+    tip.replaceChildren(...lines.map((s, j) => { const d = document.createElement(j ? "div" : "b"); d.textContent = s; return d; }));
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, e.clientX + 14)) + "px";
+    tip.style.top = (e.clientY - h - 12 < 8 ? e.clientY + 18 : e.clientY - h - 12) + "px";
+  };
+  const hideTip = () => { tip.hidden = true; };
+  const trialTip = t => [`trial ${t.i} · ${S[t.s].code}`, t.change, result(t)];
+
+  // ---------- one row per condition
+  const rows = document.getElementById("rows");
+  rows.innerHTML = S.map((s, k) => {
+    const rate = s.n ? s.k / s.n : 0;
+    const ci = s.n ? `<i class="ci" style="left:${(100 * s.lo).toFixed(1)}%;width:${(100 * (s.hi - s.lo)).toFixed(1)}%"></i>` : "";
+    const ct = ctrlOf(k);
+    const b0 = ct && ct.n ? `<i class="base" style="left:${(100 * ct.k / ct.n).toFixed(1)}%"></i>` : "";
+    const sgn = d => `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)}`;
+    let delta = "", stopc = "";
+    if (s.paired && s.paired.pairs) {
+      const p = s.paired, d = Math.round(100 * (p.this_only - p.baseline_only) / p.pairs);
+      delta = `${sgn(d)} pts<small>vs ${esc(ct.code)} · p ${p.p < 0.001 ? "<0.001" : p.p.toPrecision(2)}</small>`;
+    }
+    if (s.stop && s.stop.d_faucet !== undefined)
+      stopc = `${sgn(Math.round(100 * s.stop.d_faucet))} cm<small>stop vs ${esc(ct.code)}</small>`;
+    else if (s.stop) stopc = `${Math.round(100 * s.stop.to_faucet)} cm<small>stopped short</small>`;
+    return `<button class="srow" data-s="${k}" aria-pressed="false" title="${esc(s.desc)}">` +
+      `<span class="code">${esc(s.code)}</span><span class="name">${esc(s.label)}${s.note ? `<small>${esc(s.note)}</small>` : ""}</span>` +
+      `<span class="track" aria-hidden="true"><i class="bg"></i>${s.n ? `<i class="fill" style="width:${(100 * rate).toFixed(1)}%"></i>` : ""}${ci}${b0}</span>` +
+      `<span class="rate">${pct(s.k, s.n)}<small>${s.k}/${s.n}${s.n < s.planned ? `·${s.planned}` : ""}</small></span>` +
+      `<span class="delta">${delta}</span><span class="delta st" title="median, trial by trial, of how much farther short of the faucet it stopped walking">${stopc}</span></button>`;
+  }).join("");
+  rows.addEventListener("click", e => { const b = e.target.closest(".srow"); if (b) select(curI, +b.dataset.s); });
+
+  // ---------- success against the change (drawn at the panel's pixel width, so text keeps its size)
+  const dots = [];
+  const charts = document.getElementById("charts");
+  let W = 320;
+  const L = 36, R = 12;
+  const xscale = (P, ts) => {
+    if (P.cats) { const n = P.cats.length; return { map: v => L + (v + 0.5) / n * (W - L - R), lo: -0.5, hi: n - 0.5 }; }
+    const vals = ts.map(t => t.x[P.key] * P.scale).filter(v => Number.isFinite(v) && (!P.log || v > 0));
+    let lo = Math.min(...vals, ...(P.ticks || []).filter(v => P.min === undefined || v >= P.min)), hi = Math.max(...vals);
+    if (P.min !== undefined) lo = P.min;
+    const f = v => P.log ? Math.log(v) : v;
+    let a = f(lo), b = f(hi);
+    if (!(b > a)) { a -= 1; b += 1; }
+    const pad = 0.04 * (b - a);
+    a -= pad; b += pad;
+    return { map: v => L + (f(v) - a) / (b - a) * (W - L - R), lo: P.log ? Math.exp(a) : a, hi: P.log ? Math.exp(b) : b };
+  };
+  const drawXAxis = (g, P, sx, y, H) => {
+    el("line", { x1: L, x2: W - R, y1: y, y2: y, class: "axis" }, g);
+    if (P.cats) {
+      const every = Math.max(1, Math.ceil(P.cats.length * 46 / (W - L - R)));
+      P.cats.forEach((c, j) => { if (j % every === 0) txt(g, sx.map(j), y + 13 + (every === 1 && P.cats.length > 4 ? (j % 2) * 10 : 0), c, { "text-anchor": "middle" }); });
+      if (P.label) txt(g, (L + W - R) / 2, H - 3, P.label, { "text-anchor": "middle", class: "lab" });
+      return;
+    }
+    (P.ticks || []).forEach(v => {
+      if (v < sx.lo || v > sx.hi) return;
+      el("line", { x1: sx.map(v), x2: sx.map(v), y1: y, y2: y + 3, class: "axis" }, g);
+      txt(g, sx.map(v), y + 13, String(v), { "text-anchor": "middle" });
+    });
+    txt(g, (L + W - R) / 2, H - 3, P.label, { "text-anchor": "middle", class: "lab" });
+  };
+  const addDot = (g, t, cx, cy, r, cls) => {
+    const d = el("g", { class: "dot " + (cls || state(t)) }, g);
+    d.dataset.i = t.i; d.dataset.s = t.s;
+    el("circle", { cx, cy, r: r + 5, class: "hit" }, d);
+    el("circle", { cx, cy, r, class: "m" }, d);
+    dots.push(d);
+  };
+  const jit = t => ((t.i * 37) % 9 - 4) * 0.07;  // spreads a category's dots sideways
+  const xv = (P, t) => P.cats ? t.x[P.key] : t.x[P.key] * P.scale;
+  const perCat = (P, ts, f) => P.cats.map((c, j) => { const part = ts.filter(o => o.v === j); return part.length ? [j, f(part)] : null; }).filter(Boolean);
+  const binned = ts => {  // success rate in bins of about equal numbers of trials: [x, rate]
+    const sorted = ts.slice().sort((a, b) => a.v - b.v), nb = Math.min(6, Math.floor(sorted.length / 6));
+    if (nb < 2) return [];
+    return Array.from({ length: nb }, (_, b) => {
+      const part = sorted.slice(Math.round(b * sorted.length / nb), Math.round((b + 1) * sorted.length / nb));
+      return [part[Math.floor(part.length / 2)].v, part.filter(t => t.t.success).length / part.length];
+    });
+  };
+  const panelSuccess = (svg, P, sets) => {
+    const H = 196, yTop = 16, y0 = 32, y1 = 132, yBot = 148, yAx = 160;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("height", H);
+    const all = sets.flatMap(k => at[k].filter(Boolean)), sx = xscale(P, all);
+    const sy = r => y1 - r * (y1 - y0);
+    [0, 0.5, 1].forEach(r => { el("line", { x1: L, x2: W - R, y1: sy(r), y2: sy(r), class: "grid" }, svg); txt(svg, L - 6, sy(r) + 3.5, r === 1 ? "100%" : r ? "50%" : "0", { "text-anchor": "end" }); });
+    txt(svg, L - 6, yTop + 3.5, "✓", { "text-anchor": "end", class: "lab" });
+    txt(svg, L - 6, yBot + 3.5, "✗", { "text-anchor": "end", class: "lab" });
+    trainBand(svg, P, sx, y0, y1);
+    const cb = ctrlOf(sets[0]) || base;
+    if (cb && cb.n) {
+      el("rect", { x: L, width: W - L - R, y: sy(cb.hi), height: sy(cb.lo) - sy(cb.hi), class: "band" }, svg);
+      el("line", { x1: L, x2: W - R, y1: sy(cb.k / cb.n), y2: sy(cb.k / cb.n), class: "refl" }, svg);
+      txt(svg, W - R - 2, sy(cb.k / cb.n) - 3, cb.code, { "text-anchor": "end" });
+    }
+    sets.forEach(k => {
+      const ts = at[k].filter(t => t && t.done && Number.isFinite(t.x[P.key])).map(t => ({ t, v: xv(P, t) }));
+      const pts = P.cats ? perCat(P, ts, part => part.filter(o => o.t.success).length / part.length) : binned(ts);
+      if (pts.length) {
+        el("polyline", { points: pts.map(([v, r]) => `${sx.map(v)},${sy(r)}`).join(" "), class: "rateline" }, svg);
+        pts.forEach(([v, r]) => el("circle", { cx: sx.map(v), cy: sy(r), r: 3.6, class: "ratept" }, svg));
+      }
+      ts.forEach(({ t, v }) => addDot(svg, t, sx.map(P.cats ? v + jit(t) : v), (t.success ? yTop : yBot) + ((t.i * 37) % 7 - 3) * 1.1, 3));
+    });
+    drawXAxis(svg, P, sx, yAx - 6, H);
+  };
+  const panelStand = (svg, P, sets) => {  // where the robot ended up: its pelvis in front of the faucet
+    const H = 196, y0 = 12, y1 = 148, yAx = 154;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("height", H);
+    const all = sets.flatMap(k => at[k].filter(Boolean)), sx = xscale(P, all);
+    const done = sets.flatMap(k => at[k].filter(t => t && t.done && t.gap !== null && Number.isFinite(t.x[P.key])));
+    const b0 = (bi >= 0 ? at[bi] : []).filter(t => t && t.done && t.gap !== null).map(t => t.gap * 100).sort((a, b) => a - b);
+    const q = p => b0.length ? b0[Math.min(b0.length - 1, Math.max(0, Math.round(p * (b0.length - 1))))] : NaN;
+    const med = q(0.5), xmax = sx.hi;
+    const ys = done.map(t => t.gap * 100).concat(b0.length ? [q(0.25), q(0.75), med + xmax] : []);
+    let lo = Math.min(...ys, 0), hi = Math.max(...ys, 10);
+    lo = Math.floor(lo / 10) * 10; hi = Math.ceil(hi / 10) * 10;
+    const sy = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
+    const step = hi - lo > 60 ? 20 : 10;
+    for (let v = lo; v <= hi; v += step) { el("line", { x1: L, x2: W - R, y1: sy(v), y2: sy(v), class: "grid" }, svg); txt(svg, L - 5, sy(v) + 3, String(v), { "text-anchor": "end" }); }
+    if (b0.length) {
+      el("rect", { x: L, width: W - L - R, y: sy(q(0.75)), height: sy(q(0.25)) - sy(q(0.75)), class: "band" }, svg);
+      el("line", { x1: L, x2: W - R, y1: sy(med), y2: sy(med), class: "refl" }, svg);
+      txt(svg, W - R - 2, sy(med) + 11, base.code, { "text-anchor": "end", class: "lab" });
+      const xa = Math.max(0, sx.lo);
+      el("line", { x1: sx.map(xa), y1: sy(med + xa), x2: sx.map(xmax), y2: sy(med + xmax), class: "guide" }, svg);
+      txt(svg, sx.map(xmax) - 2, sy(med + xmax) - 5, P.slope, { "text-anchor": "end", class: "lab" });
+    }
+    done.forEach(t => addDot(svg, t, sx.map(t.x[P.key] * P.scale), sy(t.gap * 100), 3));
+    drawXAxis(svg, P, sx, yAx, H);
+  };
+  const median = a => {
+    const v = a.slice().sort((p, q) => p - q), n = v.length;
+    return n ? (n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2) : NaN;
+  };
+  const binnedMedian = ts => {  // [x, median distance] in bins of about equal numbers of trials
+    const sorted = ts.slice().sort((a, b) => a.v - b.v), nb = Math.min(6, Math.floor(sorted.length / 5));
+    if (nb < 2) return [];
+    return Array.from({ length: nb }, (_, b) => {
+      const part = sorted.slice(Math.round(b * sorted.length / nb), Math.round((b + 1) * sorted.length / nb));
+      return [median(part.map(p => p.v)), median(part.map(p => p.d))];
+    });
+  };
+  const SERIES = [["to_edge", "se", "table edge"], ["to_faucet", "sf", "faucet"]];
+  const rec_ = P => t => t[P.src || "stop"];  // the record a panel plots: where it stopped walking, or the closest hand
+  const mul_ = P => P.mul !== undefined ? P.mul : 100;  // m -> cm, or degrees as they are
+  const trainBand = (svg, P, sx, ya, yb) => {  // where the faucet was inside the demos' range
+    if (!P.train) return;
+    const a = sx.map(Math.max(sx.lo, P.train[0])), b = sx.map(Math.min(sx.hi, P.train[1]));
+    if (b > a) el("rect", { x: a, width: b - a, y: ya, height: yb - ya, class: "band" }, svg);
+  };
+  const lsq = pts => {  // least-squares slope of [x, y] pairs
+    const n = pts.length;
+    if (n < 3) return null;
+    const mx = pts.reduce((a, p) => a + p[0], 0) / n, my = pts.reduce((a, p) => a + p[1], 0) / n;
+    const sxx = pts.reduce((a, p) => a + (p[0] - mx) ** 2, 0);
+    return sxx > 0 ? pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / sxx : null;
+  };
+  const stopPoints = (P, sets) => sets.flatMap(k => at[k].filter(t => t && t.done && rec_(P)(t) && Number.isFinite(t.x[P.key])));
+  const panelStop = (svg, P, sets) => {  // where it stopped walking (or its closest hand) against the change
+    const H = 212, y0 = 12, y1 = 160, yAx = 166;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("height", H);
+    const all = sets.flatMap(k => at[k].filter(Boolean)), sx = xscale(P, all);
+    const rec = rec_(P), mul = mul_(P), done = stopPoints(P, sets);
+    const ser = P.series || SERIES;
+    const val = (t, k) => mul * rec(t)[k];
+    const ys = done.flatMap(t => ser.map(([k]) => val(t, k))).filter(Number.isFinite).sort((a, b) => a - b);
+    const pq = f => ys.length ? ys[Math.min(ys.length - 1, Math.max(0, Math.round(f * (ys.length - 1))))] : 0;  // far-off ones sit on the edge
+    const signed = !!P.series;
+    let lo = Math.floor(Math.min(signed ? -10 : 0, pq(0.02)) / 10) * 10, hi = Math.ceil(Math.max(signed ? 10 : 40, pq(0.98)) / 10) * 10;
+    if (P.track) { lo = Math.min(lo, Math.floor((sx.lo + Math.min(0, pq(0.5))) / 10) * 10); hi = Math.max(hi, Math.ceil((sx.hi + Math.max(0, pq(0.5))) / 10) * 10); }
+    const sy = v => y1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo) * (y1 - y0);
+    const step = hi - lo > 120 ? 40 : hi - lo > 60 ? 20 : 10;
+    trainBand(svg, P, sx, y0, y1);
+    for (let v = lo; v <= hi; v += step) { el("line", { x1: L, x2: W - R, y1: sy(v), y2: sy(v), class: "grid" }, svg); txt(svg, L - 5, sy(v) + 3, String(v), { "text-anchor": "end" }); }
+    const cs = sets[0] !== undefined && S[sets[0]].control !== undefined ? S[sets[0]].control : bi;  // its control: where it stopped there
+    const cdone = cs >= 0 ? at[cs].filter(t => t && t.done && rec(t)) : [];
+    ser.forEach(([k, cls]) => {
+      if (!cdone.length) return;
+      const m = median(cdone.map(t => val(t, k)).filter(Number.isFinite));
+      if (!Number.isFinite(m)) return;
+      if (P.track === k) {  // where it would be if it followed the change one to one
+        el("line", { x1: sx.map(sx.lo), y1: sy(m + sx.lo), x2: sx.map(sx.hi), y2: sy(m + sx.hi), class: "guide " + cls }, svg);
+      } else el("line", { x1: L, x2: W - R, y1: sy(m), y2: sy(m), class: "guide " + cls }, svg);
+    });
+    ser.forEach(([k, cls]) => {
+      const pts0 = done.map(t => ({ v: xv(P, t), d: val(t, k) })).filter(o => Number.isFinite(o.d));
+      const pts = P.cats ? perCat(P, pts0, part => median(part.map(o => o.d))) : binnedMedian(pts0);
+      if (pts.length) el("polyline", { points: pts.map(([v, d]) => `${sx.map(v)},${sy(d)}`).join(" "), class: "sline " + cls }, svg);
+    });
+    done.forEach(t => ser.forEach(([k, cls]) => { if (Number.isFinite(val(t, k))) addDot(svg, t, sx.map(P.cats ? xv(P, t) + jit(t) : xv(P, t)), sy(val(t, k)), 2.8, cls + (!P.src && t.stop.set_off_t === null ? " still" : "")); }));
+    const unit = mul === 100 ? "cm" : "deg";
+    txt(svg, L - 30, (y0 + y1) / 2, unit, { class: "lab", transform: `rotate(-90 ${L - 30} ${(y0 + y1) / 2})`, "text-anchor": "middle" });
+    drawXAxis(svg, P, sx, yAx, H);
+  };
+  const panelOverview = (svg, P, sets) => {  // every set: where it stopped walking, relative to the faucet
+    const cols = [["to_faucet", "short of the faucet, cm"], ["side", "faucet to its left, cm"]];
+    const LW2 = 46, rowH = 18, top = 6, H = top + sets.length * rowH + 34, gap = 44;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("height", H);
+    const cw = (W - LW2 - R - gap) / 2;
+    const yAx = top + sets.length * rowH + 4;
+    cols.forEach(([key, label], c) => {
+      const x0 = LW2 + c * (cw + gap);
+      const vals = sets.flatMap(k => at[k].filter(t => t && t.done && t.stop).map(t => 100 * t.stop[key])).sort((a, b) => a - b);
+      if (!vals.length) return;
+      const q = f => vals[Math.min(vals.length - 1, Math.max(0, Math.round(f * (vals.length - 1))))];
+      let lo = Math.floor(Math.min(q(0.01), 0) / 10) * 10, hi = Math.ceil(Math.max(q(0.99), 10) / 10) * 10;
+      const sx = v => x0 + (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo) * cw;
+      const step = hi - lo > 80 ? 20 : 10;
+      for (let v = lo; v <= hi; v += step) {
+        el("line", { x1: sx(v), x2: sx(v), y1: top, y2: yAx, class: "grid" }, svg);
+        txt(svg, sx(v), yAx + 12, String(v), { "text-anchor": "middle" });
+      }
+      txt(svg, x0 + cw / 2, H - 3, label, { "text-anchor": "middle", class: "lab" });
+      if (base) {
+        const b = at[bi].filter(t => t && t.done && t.stop).map(t => 100 * t.stop[key]).sort((a, b2) => a - b2);
+        if (b.length > 3) {
+          const bq = f => b[Math.round(f * (b.length - 1))];
+          el("rect", { x: sx(bq(0.25)), width: sx(bq(0.75)) - sx(bq(0.25)), y: top, height: yAx - top, class: "band" }, svg);
+        }
+      }
+      sets.forEach((k, r) => {
+        const yc = top + r * rowH + rowH / 2;
+        if (c === 0) txt(svg, 0, yc + 3.5, S[k].code, { class: "rowl" });
+        const ts = at[k].filter(t => t && t.done && t.stop);
+        ts.forEach(t => addDot(svg, t, sx(100 * t.stop[key]), yc + ((t.i * 37) % 9 - 4) * 1.2, 2.2, state(t) + (t.stop.set_off_t === null ? " still" : "")));
+        const ct = S[k].control !== undefined ? S[k].control : null;
+        const cts = ct !== null ? at[ct].filter(t => t && t.done && t.stop) : [];
+        if (cts.length) { const m = median(cts.map(t => 100 * t.stop[key])); el("line", { x1: sx(m), x2: sx(m), y1: yc - 7, y2: yc + 7, class: "ctlm" }, svg); }
+        if (ts.length) { const m = median(ts.map(t => 100 * t.stop[key])); el("line", { x1: sx(m), x2: sx(m), y1: yc - 7, y2: yc + 7, class: "medm" }, svg); }
+      });
+    });
+  };
+  const fmtSlope = v => v === null || v === undefined ? "–" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2);
+  const figs = [];
+  D.groups.forEach(G => {
+    const grp = document.createElement("div");
+    grp.className = "group";
+    const h = document.createElement("h2"); h.textContent = G.title; grp.appendChild(h);
+    const panels = document.createElement("div"); panels.className = "panels"; grp.appendChild(panels);
+    G.panels.forEach(P => {
+      const sets = P.sets.map(key => S.findIndex(s => s.key === key)).filter(k => k >= 0);
+      if (!sets.length) return;
+      const fig = document.createElement("figure");
+      const cap = document.createElement("figcaption");
+      const name = document.createElement("span"); name.textContent = P.title; cap.appendChild(name);
+      if (P.kind === "success") {
+        const n = document.createElement("span"); n.className = "num";
+        n.textContent = sets.map(k => `${S[k].k}/${S[k].n}`).join(" · "); cap.appendChild(n);
+      } else if (P.kind === "overview") {
+        const n = document.createElement("span"); n.className = "num";
+        n.innerHTML = `<i class="sw" style="background:var(--ok)"></i>✓<i class="sw" style="background:var(--fail)"></i>✗<i class="sw hol"></i>did not walk<i class="bar"></i>median<i class="bar ctl"></i>control`;
+        cap.appendChild(n);
+      } else if (P.kind === "stop") {  // each series, with how much it changes per unit of the change
+        const n = document.createElement("span"); n.className = "num";
+        const pts = stopPoints(P, sets), mul = mul_(P), rec = rec_(P);
+        n.innerHTML = (P.series || SERIES).map(([k, cls, lab]) => {
+          const sl = P.cats ? null : lsq(pts.filter(t => Number.isFinite(rec(t)[k])).map(t => [xv(P, t), mul * rec(t)[k]]));
+          return `<i class="sw ${cls}"></i>${esc(lab)}${P.cats ? "" : " " + fmtSlope(sl)}`;
+        }).join("") + (!P.src && pts.some(t => t.stop.set_off_t === null) ?
+          `<i class="sw hol"></i>${pts.filter(t => t.stop.set_off_t === null).length}/${pts.length} did not walk` : "");
+        n.title = "change per unit of the change (least squares)";
+        cap.appendChild(n);
+      }
+      fig.appendChild(cap);
+      if (P.kind === "overview") fig.classList.add("wide");
+      const svg = el("svg", { role: "img", "aria-label": P.title || G.title }, fig);
+      svg.addEventListener("click", e => { const d = e.target.closest(".dot"); if (d) select(+d.dataset.i, +d.dataset.s); });
+      svg.addEventListener("pointermove", e => { const d = e.target.closest(".dot"); if (!d) { hideTip(); return; } showTip(e, trialTip(at[+d.dataset.s][+d.dataset.i])); });
+      svg.addEventListener("pointerleave", hideTip);
+      panels.appendChild(fig);
+      figs.push({ fig, svg, P, sets });
+    });
+    if (panels.children.length === 4) panels.classList.add("four");
+    if (panels.children.length) charts.appendChild(grp);
+  });
+  let drawnW = [];
+  const drawCharts = () => {
+    const ws = figs.map(f => Math.max(220, Math.floor(f.fig.clientWidth - 22)));
+    if (ws.every((w, j) => w === drawnW[j])) return;
+    drawnW = ws;
+    dots.length = 0;
+    figs.forEach((f, j) => { W = ws[j]; f.svg.replaceChildren(); ({ stand: panelStand, stop: panelStop, lateral: panelStop, overview: panelOverview }[f.P.kind] || panelSuccess)(f.svg, f.P, f.sets); });
+    dots.forEach(d => d.classList.toggle("sel", +d.dataset.i === curI && +d.dataset.s === curS));
+  };
+
+  // ---------- every trial: one row per condition, one square per trial index
+  const strip = document.getElementById("strip");
+  const C = 12, G2 = 2, LW = 46, TOP = 16;
+  strip.setAttribute("width", LW + N * (C + G2));
+  strip.setAttribute("height", TOP + S.length * (C + G2));
+  strip.setAttribute("viewBox", `0 0 ${LW + N * (C + G2)} ${TOP + S.length * (C + G2)}`);
+  const selcol = el("rect", { y: TOP - 3, width: C + 2 * G2, height: S.length * (C + G2) + 2, rx: 3, class: "selcol" }, strip);
+  for (let i = 0; i < N; i += 10) txt(strip, LW + i * (C + G2) + C / 2, 10, String(i), { "text-anchor": "middle" });
+  S.forEach((s, k) => {
+    txt(strip, 0, TOP + k * (C + G2) + C - 2, s.code, { class: "rowlab" });
+    for (let i = 0; i < Math.min(N, s.planned || N); i++) {
+      const t = at[k][i];
+      const r = el("rect", { x: LW + i * (C + G2), y: TOP + k * (C + G2), width: C, height: C, rx: 2.5, class: "cell " + state(t) }, strip);
+      r.dataset.i = i; r.dataset.s = k;
+    }
+  });
+  const selbox = el("rect", { width: C + 2, height: C + 2, rx: 3.5, class: "selbox" }, strip);
+  strip.addEventListener("click", e => { const r = e.target.closest(".cell"); if (r) select(+r.dataset.i, +r.dataset.s); });
+  strip.addEventListener("pointermove", e => { const r = e.target.closest(".cell"); const t = r && at[+r.dataset.s][+r.dataset.i]; if (!t) { hideTip(); return; } showTip(e, trialTip(t)); });
+  strip.addEventListener("pointerleave", hideTip);
+
+  // ---------- top-down map, in the robot's start frame: the selected trial's scene, and every trial of its condition
+  // by its faucet (where it was relative to that trial's robot), coloured by the result. The faucet nearest the
+  // pointer is picked.
+  const map = document.getElementById("map");
+  const rec = u => u.table0 || u.table;
+  const changed = u => !!u.table0;  // its drawn table differs from the one it was changed from
+  const extOf = k => {  // cm; the robot at 0, centred: the condition's faucets, and its tables where they changed
+    const ts = at[k].filter(Boolean);
+    let half = 45, top = Y(Math.max(...ts.map(u => u.dx))) - 12;
+    const deep = top - 130;
+    ts.forEach(u => {
+      half = Math.max(half, 100 * Math.abs(u.dy) + 25);
+      if (changed(u)) tableCorners(u.table).forEach(([x, y]) => { half = Math.max(half, Math.abs(x) + 10); top = Math.min(top, Math.max(deep, y - 8)); });
+    });
+    return { half: Math.min(half, 330), top, bot: 18 };
+  };
+  const sw = (fill, stroke, extra) => `<svg viewBox="0 0 16 12" aria-hidden="true"><rect x="1" y="1" width="14" height="10" rx="1.5" fill="${fill}" stroke="${stroke}"${extra || ""}/></svg>`;
+  let mapScale = 1, mapDots = [], hover = null;
+  const drawMap = () => {
+    map.replaceChildren();
+    const mapExt = extOf(curS);
+    const w = Math.max(260, map.parentNode.clientWidth);
+    const spanY = mapExt.bot - mapExt.top;
+    const s = Math.max(1.1, Math.min(w / (2 * mapExt.half), Math.min(560, Math.max(320, 0.6 * w)) / spanY));  // px per cm
+    const visW = w / s;
+    mapScale = s;
+    map.setAttribute("viewBox", `${-visW / 2} ${mapExt.top} ${visW} ${spanY}`);
+    map.setAttribute("height", Math.round(spanY * s));
+    const t = at[curS][curI] || at.map(r => r[curI]).find(Boolean);
+    const ts = at[curS].filter(Boolean);
+    tablePoly(t.table, "tbl", map);
+    if (ts.some(changed)) ts.forEach(u => tablePoly(u.table, "ttable " + state(u), map).style.strokeOpacity = Math.min(0.55, 14 / ts.length).toFixed(3));
+    ts.forEach(u => { if (u !== t && u.path_p && u.path_p.length > 1) el("polyline", { points: u.path_p.map(([f, l]) => `${X(l)},${Y(f)}`).join(" "), class: "ppath " + state(u) }, map); });
+    if (t.table0 && t.edge_phys !== null) tablePoly(t.table0, "physt", map);  // where the robot would bump into it
+    robotMark(map);
+    trialMarks(map, t, 3.2);
+    mapDots = ts.map(u => ({ u, x: X(u.dy), y: Y(u.dx) }));
+    mapDots.forEach(d => { if (d.u !== t) el("circle", { cx: d.x, cy: d.y, r: 6 / s, class: "fdot " + state(d.u) }, map); });
+    faucetMark(map, t, "fsel " + state(t));
+    el("circle", { cx: X(t.dy), cy: Y(t.dx) - 2.8, r: Math.max(6.5, 11 / s), class: "selring" }, map);
+    hover = el("circle", { r: 9 / s, class: "hovring", visibility: "hidden" }, map);
+    const bx = -visW / 2 + 14 / s, by = mapExt.bot - 12 / s;
+    el("line", { x1: bx, x2: bx + 50, y1: by, y2: by, class: "scalebar" }, map);
+    txt(map, bx + 25, by - 6 / s, "50 cm", { "text-anchor": "middle", style: `font-size:${(10.5 / s).toFixed(2)}px` });
+    document.getElementById("mapcond").innerHTML = `<b>${esc(S[curS].code)}</b>${esc(S[curS].label)}`;
+    document.getElementById("maplegend").innerHTML =
+      `<span>${sw("var(--table)", "var(--table-edge)")}table</span>` +
+      (t.table0 && t.edge_phys !== null ? `<span><svg viewBox="0 0 16 12" aria-hidden="true"><line x1="1" y1="6" x2="15" y2="6" stroke="var(--ink-2)" stroke-width="1.3" stroke-dasharray="3 2"/></svg>physical table</span>` : "") +
+      `<span><svg viewBox="0 0 16 12" aria-hidden="true"><circle cx="4.5" cy="6" r="3.5" fill="var(--ok)"/><circle cx="11.5" cy="6" r="3.5" fill="var(--fail)"/></svg>faucet ✓ ✗</span>` +
+      (t.stop ? `<span><svg viewBox="0 0 16 12" aria-hidden="true"><path d="M5,3L11,9M5,9L11,3" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/></svg>stopped walking</span>` : "");
+  };
+  const pickDot = e => {  // the faucet nearest the pointer, within 26 px
+    const m = map.getScreenCTM();
+    if (!m || !mapDots.length) return null;
+    const q = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    let best = null, bd = Infinity;
+    mapDots.forEach(d => { const dd = Math.hypot(d.x - q.x, d.y - q.y); if (dd < bd) { bd = dd; best = d; } });
+    return best && bd * mapScale <= 26 ? best : null;
+  };
+  map.addEventListener("click", e => { const d = pickDot(e); if (d) select(d.u.i, d.u.s); });
+  map.addEventListener("pointermove", e => {
+    const d = pickDot(e);
+    map.classList.toggle("picking", !!d);
+    if (hover) {
+      hover.setAttribute("visibility", d ? "visible" : "hidden");
+      if (d) { hover.setAttribute("cx", d.x); hover.setAttribute("cy", d.y); }
+    }
+    if (d) showTip(e, trialTip(d.u)); else hideTip();
+  });
+  map.addEventListener("pointerleave", () => { hideTip(); map.classList.remove("picking"); if (hover) hover.setAttribute("visibility", "hidden"); });
+
+  // ---------- the selected trial
+  const sketch = document.getElementById("sketch");
+  const drawSketch = t => {
+    sketch.replaceChildren();
+    const half = 90, top = -95, bot = 25;
+    sketch.setAttribute("viewBox", `${-half} ${top} ${2 * half} ${bot - top}`);
+    for (let v = -50; v <= 50; v += 50) el("line", { x1: v, x2: v, y1: top, y2: bot, class: "skgrid" }, sketch);
+    for (let v = 0; v >= top; v -= 50) el("line", { x1: -half, x2: half, y1: v, y2: v, class: "skgrid" }, sketch);
+    tablePoly(t.table, "tbl", sketch);
+    if (t.table0 && t.edge_phys !== null) tablePoly(t.table0, "physt", sketch);
+    faucetMark(sketch, t, "faucet");
+    robotMark(sketch);
+    trialMarks(sketch, t, 3);
+  };
+  const fact = (k, v, cls) => `<dt>${esc(k)}</dt><dd${cls ? ` class="${cls}"` : ""}>${esc(v)}</dd>`;
+  const video = document.getElementById("video");
+  function select(i, s) {
+    curI = (i + N) % N;
+    curS = s === undefined ? curS : s;
+    const t = at[curS][curI] || at.map(r => r[curI]).find(Boolean);
+    rows.querySelectorAll(".srow").forEach(b => b.setAttribute("aria-pressed", +b.dataset.s === curS));
+    dots.forEach(d => d.classList.toggle("sel", +d.dataset.i === curI && +d.dataset.s === curS));
+    selcol.setAttribute("x", LW + curI * (C + G2) - G2);
+    selbox.setAttribute("x", LW + curI * (C + G2) - 1);
+    selbox.setAttribute("y", TOP + curS * (C + G2) - 1);
+    document.getElementById("vtitle").innerHTML = `Trial ${curI}<small>${esc(S[curS].code)} ${esc(S[curS].label)}</small>`;
+    document.getElementById("chips").innerHTML = S.map((s2, k) => {
+      const u = at[k][curI];
+      return `<button class="chip ${state(u)}" data-s="${k}" aria-pressed="${k === curS}" title="${esc(s2.label)}: ${esc(result(u))}">${mark(u)} ${esc(s2.code)}</button>`;
+    }).join("");
+    const src = t && t.video;
+    if (src) {
+      if (video.dataset.src !== src) {
+        video.innerHTML = `<video src="${esc(src)}" controls muted playsinline autoplay preload="metadata"></video>`;
+        video.dataset.src = src;
+      }
+    } else {
+      video.innerHTML = `<div class="novid">${t && t.done ? "no video" : "not run yet"}</div>`;
+      video.dataset.src = "";
+    }
+    const st = state(t), sp = t.done && t.stop, cm = v => `${Math.round(100 * v)} cm`;
+    document.getElementById("facts").innerHTML =
+      fact("Change", t.change) +
+      fact("Result", result(t) + (t.done && t.steps ? ` · ${(t.steps / 50).toFixed(1)} s` : ""), st === "none" ? "" : st) +
+      (sp ? fact("Stopped walking", sp.set_off_t === null ? "did not walk" : sp.kept_walking ? `never (${cm(sp.walked)} forward at the end)` :
+          `at ${sp.t.toFixed(1)} s, ${cm(sp.walked)} forward`) +
+        fact("Pelvis to", `table edge ${cm(sp.to_edge)} · faucet ${cm(sp.to_faucet)}` +
+          (sp.side !== undefined ? ` (${cm(Math.abs(sp.side))} ${sp.side >= 0 ? "left" : "right"})` : "") +
+          (t.edge_phys !== null ? ` · physical edge ${cm(sp.to_physical_edge)}` : "")) +
+        (sp.moved_after > 0.03 ? fact("Then moved", cm(sp.moved_after)) : "") : "") +
+      (t.done && !t.stop && t.gap !== null ? fact("Pelvis", `${Math.round(t.gap * 100)} cm short of the faucet`) : "") +
+      (t.done && t.touch !== null && t.touch !== undefined ? fact("Table contact", t.touch ? `${t.touch} steps` : "none") : "");
+    drawSketch(t);
+    drawMap();
+    if (history.replaceState) history.replaceState(null, "", `#t${curI}s${curS}`);
+  }
+  document.getElementById("chips").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) select(curI, +b.dataset.s); });
+  document.getElementById("prev").addEventListener("click", () => select(curI - 1));
+  document.getElementById("next").addEventListener("click", () => select(curI + 1));
+  document.addEventListener("keydown", e => {
+    if (e.target.closest("input, textarea, video")) return;
+    if (e.key === "ArrowLeft") select(curI - 1);
+    else if (e.key === "ArrowRight") select(curI + 1);
+  });
+
+  // ---------- start at the trial the link names (#t3s2), else the first index finished in most conditions
+  drawCharts();
+  if (window.ResizeObserver) {
+    let queued = false, mapW = 0;
+    const ro = new ResizeObserver(() => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        drawCharts();
+        const w = map.parentNode.clientWidth;
+        if (w !== mapW) { mapW = w; drawMap(); }
+      });
+    });
+    ro.observe(charts);
+    ro.observe(map.parentNode);
+  }
+  const m = /^#t(\d+)s(\d+)$/.exec(location.hash);
+  if (m && +m[1] < N && +m[2] < S.length) select(+m[1], +m[2]);
+  else {
+    let first = 0, best = -1;
+    for (let i = 0; i < N; i++) { const n = S.filter((s, k) => at[k][i] && at[k][i].done).length; if (n > best) { best = n; first = i; } }
+    select(first, 0);
+  }
+})();
+</script>
